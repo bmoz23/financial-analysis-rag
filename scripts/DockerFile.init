@@ -1,0 +1,6 @@
+FROM novus-base
+WORKDIR /app
+COPY . .
+
+ENV PYTHONPATH=/app:$PYTHONPATH
+CMD ["python","scripts/init_db.py"]

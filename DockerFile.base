@@ -1,0 +1,10 @@
+# Dockerfile.base
+FROM continuumio/miniconda3:latest
+
+WORKDIR /app
+
+COPY environment.yml .
+RUN conda env create -f environment.yml && conda clean -afy
+
+ENV PATH=/opt/conda/envs/novus/bin:$PATH
+SHELL ["conda", "run", "-n", "novus", "/bin/bash", "-c"]

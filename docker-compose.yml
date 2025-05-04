@@ -1,0 +1,124 @@
+
+
+services:
+  # ─────────── PostgreSQL ───────────
+  db:
+    image: postgres:16-alpine
+    container_name: finrag-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: finrag
+      POSTGRES_PASSWORD: finrag
+      POSTGRES_DB: finrag
+      # Gerekiyorsa saat dilimi
+      TZ: Europe/Istanbul
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  # ─────────── pgAdmin 4 ────────────
+  pgadmin:
+    image: dpage/pgadmin4:8   # 8.x serisi (güncel)
+    container_name: finrag-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@finrag.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
+      # Oturumu hatırlaması için bu zorunlu
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    ports:
+      - "5055:80"   # http://localhost:5050
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - db
+
+  # ─────────── Init DB (once) ───────────
+  init_db:
+    build:
+      context: .
+      dockerfile: scripts/DockerFile.init
+    container_name: finrag-init-db
+    env_file: .env
+    depends_on:
+      - db
+    environment:
+      POSTGRES_URI: postgresql+asyncpg://finrag:finrag@db:5432/finrag
+
+  # ─────────── Ingestion Service ───────────
+  ingestion:
+    build:
+      context: .
+      dockerfile: ingestion/DockerFile
+    container_name: finrag-ingestion
+    env_file: .env
+    ports:
+      - "8001:8001"
+    depends_on:
+      - db
+
+  # ─────────── Chat Service (API Gateway) ───────────
+  chat_service:
+    build:
+      context: .
+      dockerfile: chat_service/DockerFile
+    container_name: finrag-chat
+    env_file: .env
+    ports:
+      - "8005:8005" 
+    depends_on:
+      - ingestion
+      - analysis
+      - report_generator
+    environment:
+      - RAG_URL=http://analysis:8003/query
+      - REPORT_URL=http://report_generator:8004/generate_report
+
+  # ─────────── Analysis (RAG) Service ───────────
+  analysis:
+    build:
+      context: .
+      dockerfile: analysis/DockerFile
+    container_name: finrag-analysis
+    env_file: .env
+    ports:
+      - "8003:8003"
+    depends_on:
+      - init_db
+      - db
+    environment:
+      POSTGRES_URI: postgresql+asyncpg://finrag:finrag@db:5432/finrag
+
+  # ─────────── Report Generation Service ───────────
+  report_generator:
+    build:
+      context: .
+      dockerfile: report_generator/DockerFile
+    container_name: finrag-report
+    env_file: .env
+    ports:
+      - "8004:8004"
+    depends_on:
+      - db
+      - analysis
+
+  # ─────────── Frontend (Streamlit) ───────────
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/DockerFile
+    container_name: finrag-frontend
+    env_file: .env
+    ports:
+      - "8502:8502"
+    depends_on:
+      - chat_service
+      - report_generator
+    environment:
+      - CHAT_API_URL=http://chat_service:8005/chat
+
+volumes:
+  pgdata:
+  pgadmin_data:
+  mongo_data:
